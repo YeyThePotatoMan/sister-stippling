@@ -28,3 +28,14 @@ def to_density_map(img):
             g = px[x, y]
             density[row + x] = (255 - g) / 255.0
     return density, w, h
+
+
+def render_points_to_image(points, width, height):
+    img = Image.new("RGB", (width, height), (255, 255, 255))
+    px = img.load()
+    for (x, y) in points:
+        nx = int(round(x))
+        ny = int(round(y))
+        if 0 <= nx < width and 0 <= ny < height:
+            px[ny, nx] = (0, 0, 0)
+    return img
