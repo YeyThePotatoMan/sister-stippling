@@ -37,5 +37,5 @@ def render_points_to_image(points, width, height):
         nx = int(round(x))
         ny = int(round(y))
         if 0 <= nx < width and 0 <= ny < height:
-            px[ny, nx] = (0, 0, 0)
+            px[nx, ny] = (0, 0, 0)
     return img
