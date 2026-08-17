@@ -8,8 +8,6 @@ pip install Pillow numba
 
 - **GPU mode** additionally needs a CUDA toolkit + NVIDIA driver. If no GPU is
   available, the program prints a clear message and exits instead of crashing.
-- **SIMD bonus** needs `gcc` and an AVX2-capable CPU. Run `bash native/build.sh`
-  once to compile the shared libraries.
 
 ## Usage
 
@@ -25,11 +23,6 @@ python main.py --input IMG --points N --iters K --epsilon E --output OUT --mode 
 | `--epsilon`  | stop when max dot movement drops below this | `0.5`     |
 | `--output`   | output PNG path                           | `out.png`   |
 | `--mode`     | `sequential` / `cpu` / `gpu` / `benchmark`| `sequential`|
-
-Handy extras: `--workers N` (cpu processes), `--max-side N` (resize longest side,
-default `150`, `--scale N` (upscale the rendered dots), `--animate --gif out.gif`
-(make a convergence animation), and `--interactive` (answer prompts instead of
-using flags).
 
 The CLI lives in `stippling/main.py`; run it from inside the `stippling/` folder.
 
