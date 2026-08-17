@@ -1,79 +1,70 @@
-import os
-import ctypes
-import glob
+import numpy as np
+import multiprocessing as mp
+from multiprocessing import shared_memory
 
-from types import SimpleNamespace
+_shm = None
+_density = None
+_width = 0
+_height = 0
 
-_NATIVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "native")
+def _init_worker(shm_name, shape, width, height):
+    global _shm, _density, _width, _height
+    _shm = shared_memory.SharedMemory(name=shm_name)
+    _density = np.ndarray(shape, dtype=np.float64, buffer=_shm.buf)
+    _width, _height = width, height
 
+def _process_chunk(args):
+    start, end, points = args
+    pts = np.asarray(points, dtype=np.float64)
+    n = len(pts)
+    sub = _density[start:end]
+    ys_local, xs = np.nonzero(sub)
+    if xs.size == 0:
+        return np.zeros(n), np.zeros(n), np.zeros(n)
+    ys = ys_local + start
+    w = sub[ys_local, xs]
+    dx = xs[:, None] - pts[None, :, 0]
+    dy = ys[:, None] - pts[None, :, 1]
+    best = np.argmin(dx * dx + dy * dy, axis=1)
+    return (np.bincount(best, weights=xs * w, minlength=n),
+            np.bincount(best, weights=ys * w, minlength=n),
+            np.bincount(best, weights=w, minlength=n))
 
-def avx2_supported():
+def run_hybrid(density_map, points, width, height, max_iter, epsilon,
+                n_workers, snapshots=None, progress=None):
+    density = np.ascontiguousarray(density_map, dtype=np.float64).reshape(height, width)
+    shm = shared_memory.SharedMemory(create=True, size=density.nbytes)
+    shm_arr = np.ndarray(density.shape, dtype=np.float64, buffer=shm.buf)
+    shm_arr[:] = density[:]
+
+    chunks = _split_rows(height, n_workers)  # reuse fungsi kamu
+    history, current = [], points
+    ctx = mp.get_context("spawn")
     try:
-        with open("/proc/cpuinfo", "r") as f:
-            for line in f:
-                if line.startswith("flags"):
-                    return "avx2" in line.split()
-    except Exception:
-        return False
-    return False
-
-
-def _load(libname):
-    path = os.path.join(_NATIVE_DIR, libname)
-    if not os.path.isfile(path):
-        raise FileNotFoundError("native lib not found: %s (run native/build.sh)" % path)
-    lib = ctypes.CDLL(path)
-    proto = (ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int,
-             ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-             ctypes.c_int,
-             ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-             ctypes.POINTER(ctypes.c_double))
-    if hasattr(lib, "lloyd_assign_scalar"):
-        lib.lloyd_assign_scalar.argtypes = proto
-    if hasattr(lib, "lloyd_assign_simd"):
-        lib.lloyd_assign_simd.argtypes = proto
-    return lib
-
-
-def run_simd(density_map, points, width, height, max_iter, epsilon, use_simd=True):
-    if use_simd and avx2_supported():
-        lib = _load("simd_kernel.so")
-        fn = lib.lloyd_assign_simd
-    else:
-        lib = _load("scalar_kernel.so")
-        fn = lib.lloyd_assign_scalar
-
-    n = len(points)
-    density_arr = (ctypes.c_double * len(density_map))(*density_map)
-    sum_x = (ctypes.c_double * n)()
-    sum_y = (ctypes.c_double * n)()
-    sum_w = (ctypes.c_double * n)()
-
-    current = points
-    history = []
-    for it in range(max_iter):
-        px = [p[0] for p in current]
-        py = [p[1] for p in current]
-        px_arr = (ctypes.c_double * n)(*px)
-        py_arr = (ctypes.c_double * n)(*py)
-        fn(density_arr, width, height, px_arr, py_arr, n, sum_x, sum_y, sum_w)
-        new_points = []
-        max_shift = 0.0
-        for i in range(n):
-            if sum_w[i] > 0.0:
-                nx = sum_x[i] / sum_w[i]
-                ny = sum_y[i] / sum_w[i]
-            else:
-                nx, ny = current[i]
-            dx = nx - current[i][0]
-            dy = ny - current[i][1]
-            shift = (dx * dx + dy * dy) ** 0.5
-            if shift > max_shift:
-                max_shift = shift
-            new_points.append((nx, ny))
-        history.append(max_shift)
-        if max_shift < epsilon:
-            current = new_points
-            break
-        current = new_points
+        with ctx.Pool(n_workers, initializer=_init_worker,
+                       initargs=(shm.name, density.shape, width, height)) as pool:
+            for it in range(max_iter):
+                results = pool.map(_process_chunk, [(s, e, current) for s, e in chunks])
+                n = len(current)
+                sum_x = sum(r[0] for r in results)
+                sum_y = sum(r[1] for r in results)
+                sum_w = sum(r[2] for r in results)
+                new_points, max_shift = [], 0.0
+                for i in range(n):
+                    if sum_w[i] > 0:
+                        nx, ny = sum_x[i] / sum_w[i], sum_y[i] / sum_w[i]
+                    else:
+                        nx, ny = current[i]
+                    shift = ((nx - current[i][0])**2 + (ny - current[i][1])**2) ** 0.5
+                    max_shift = max(max_shift, shift)
+                    new_points.append((nx, ny))
+                history.append(max_shift)
+                if snapshots is not None: snapshots.append(list(new_points))
+                if progress is not None: progress(it, max_shift)
+                current = new_points
+                if max_shift < epsilon:
+                    break
+    finally:
+        shm.close()
+        shm.unlink()
     return current, history
