@@ -66,9 +66,10 @@ def run_cpu_parallel(density_map, points, width, height, max_iter, epsilon, n_wo
             sum_y = [0.0] * n
             sum_w = [0.0] * n
             for (sx, sy, sw) in results:
-                sum_x = sx
-                sum_y = sy
-                sum_w = sw
+                for i in range(n):
+                    sum_x[i] += sx[i]
+                    sum_y[i] += sy[i]
+                    sum_w[i] += sw[i]
             new_points = []
             max_shift = 0.0
             for i in range(n):
