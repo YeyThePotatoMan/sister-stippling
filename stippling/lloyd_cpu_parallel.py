@@ -4,13 +4,25 @@ import multiprocessing as mp
 _density = None
 _width = 0
 _height = 0
+_chunks = []
 
 
-def _init_worker(density, width, height):
-    global _density, _width, _height
+def _init_worker(density, width, height, chunks):
+    global _density, _width, _height, _chunks
     _density = density
     _width = width
     _height = height
+    _chunks = chunks
+
+
+def _split_rows(height, n_workers):
+    chunk = max(1, height // n_workers)
+    chunks = []
+    for w in range(n_workers):
+        start = w * chunk
+        end = height if w == n_workers - 1 else (w + 1) * chunk
+        chunks.append((start, end))
+    return chunks
 
 
 def _worker(args):
@@ -42,17 +54,13 @@ def _worker(args):
 
 
 def run_cpu_parallel(density_map, points, width, height, max_iter, epsilon, n_workers):
+    chunks = _split_rows(height, n_workers)
     history = []
     current = points
-    chunk = max(1, height // n_workers)
-    with mp.Pool(n_workers, initializer=_init_worker, initargs=(density_map, width, height)) as pool:
+    with mp.Pool(n_workers, initializer=_init_worker, initargs=(density_map, width, height, chunks)) as pool:
         for it in range(max_iter):
             n = len(current)
-            tasks = []
-            for w in range(n_workers):
-                start = w * chunk
-                end = height if w == n_workers - 1 else (w + 1) * chunk
-                tasks.append((start, end, current))
+            tasks = [(s, e, current) for (s, e) in chunks]
             results = pool.map(_worker, tasks)
             sum_x = [0.0] * n
             sum_y = [0.0] * n
