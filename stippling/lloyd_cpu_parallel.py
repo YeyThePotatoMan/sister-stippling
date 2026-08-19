@@ -1,16 +1,28 @@
 import multiprocessing as mp
 
 
+_density = None
+_width = 0
+_height = 0
+
+
+def _init_worker(density, width, height):
+    global _density, _width, _height
+    _density = density
+    _width = width
+    _height = height
+
+
 def _worker(args):
-    start, end, density, points, width, height = args
+    start, end, points = args
     n = len(points)
     sum_x = [0.0] * n
     sum_y = [0.0] * n
     sum_w = [0.0] * n
     for y in range(start, end):
-        row = y * width
-        for x in range(width):
-            w = density[row + x]
+        row = y * _width
+        for x in range(_width):
+            w = _density[row + x]
             if w == 0.0:
                 continue
             best = 0
@@ -33,23 +45,22 @@ def run_cpu_parallel(density_map, points, width, height, max_iter, epsilon, n_wo
     history = []
     current = points
     chunk = max(1, height // n_workers)
-    with mp.Pool(n_workers) as pool:
+    with mp.Pool(n_workers, initializer=_init_worker, initargs=(density_map, width, height)) as pool:
         for it in range(max_iter):
             n = len(current)
             tasks = []
             for w in range(n_workers):
                 start = w * chunk
                 end = height if w == n_workers - 1 else (w + 1) * chunk
-                tasks.append((start, end, density_map, current, width, height))
+                tasks.append((start, end, current))
             results = pool.map(_worker, tasks)
             sum_x = [0.0] * n
             sum_y = [0.0] * n
             sum_w = [0.0] * n
             for (sx, sy, sw) in results:
-                for i in range(n):
-                    sum_x[i] += sx[i]
-                    sum_y[i] += sy[i]
-                    sum_w[i] += sw[i]
+                sum_x = sx
+                sum_y = sy
+                sum_w = sw
             new_points = []
             max_shift = 0.0
             for i in range(n):
