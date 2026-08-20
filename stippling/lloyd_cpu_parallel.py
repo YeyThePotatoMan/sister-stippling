@@ -15,17 +15,7 @@ def _init_worker(density, width, height, chunks):
     _chunks = chunks
 
 
-def _split_rows(height, n_workers):
-    chunk = max(1, height // n_workers)
-    chunks = []
-    for w in range(n_workers):
-        start = w * chunk
-        end = height if w == n_workers - 1 else (w + 1) * chunk
-        chunks.append((start, end))
-    return chunks
-
-
-def _worker(args):
+def _process_chunk(args):
     start, end, points = args
     n = len(points)
     sum_x = [0.0] * n
@@ -53,15 +43,30 @@ def _worker(args):
     return (sum_x, sum_y, sum_w)
 
 
-def run_cpu_parallel(density_map, points, width, height, max_iter, epsilon, n_workers):
+def _split_rows(height, n_workers):
+    n_workers = max(1, min(n_workers, height))
+    base = height // n_workers
+    rem = height % n_workers
+    chunks = []
+    start = 0
+    for i in range(n_workers):
+        size = base + (1 if i < rem else 0)
+        if size > 0:
+            chunks.append((start, start + size))
+            start += size
+    return chunks
+
+
+def run_cpu_parallel(density_map, points, width, height, max_iter, epsilon, n_workers, snapshots=None, progress=None):
     chunks = _split_rows(height, n_workers)
     history = []
     current = points
-    with mp.Pool(n_workers, initializer=_init_worker, initargs=(density_map, width, height, chunks)) as pool:
+    ctx = mp.get_context("spawn")
+    with ctx.Pool(n_workers, initializer=_init_worker, initargs=(density_map, width, height, chunks)) as pool:
         for it in range(max_iter):
-            n = len(current)
             tasks = [(s, e, current) for (s, e) in chunks]
-            results = pool.map(_worker, tasks)
+            results = pool.map(_process_chunk, tasks)
+            n = len(current)
             sum_x = [0.0] * n
             sum_y = [0.0] * n
             sum_w = [0.0] * n
@@ -85,6 +90,10 @@ def run_cpu_parallel(density_map, points, width, height, max_iter, epsilon, n_wo
                     max_shift = shift
                 new_points.append((nx, ny))
             history.append(max_shift)
+            if snapshots is not None:
+                snapshots.append(list(new_points))
+            if progress is not None:
+                progress(it, max_shift)
             if max_shift < epsilon:
                 current = new_points
                 break
