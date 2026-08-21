@@ -13,16 +13,13 @@ def gpu_available():
 
 
 @cuda.jit
-def assign_kernel(density, px, py, n, width, height, sum_x, sum_y, sum_w):
+def assign_kernel(density, px, py, n, width, height, best_idx):
     idx = cuda.grid(1)
     total = width * height
     if idx >= total:
         return
     x = idx % width
     y = idx // width
-    w = density[idx]
-    if w == 0.0:
-        return
     best = 0
     best_d = -1.0
     for i in range(n):
@@ -32,10 +29,25 @@ def assign_kernel(density, px, py, n, width, height, sum_x, sum_y, sum_w):
         if best_d < 0.0 or d < best_d:
             best_d = d
             best = i
-    # race condition: many threads write to the same index without atomic
-    sum_x[best] += x * w
-    sum_y[best] += y * w
-    sum_w[best] += w
+    best_idx[idx] = best
+
+
+@cuda.jit
+def update_kernel(density, width, height, best_idx, sum_x, sum_y, sum_w):
+    idx = cuda.grid(1)
+    total = width * height
+    if idx >= total:
+        return
+    w = density[idx]
+    if w == 0.0:
+        return
+    x = idx % width
+    y = idx // width
+    b = best_idx[idx]
+    # race condition: plain += without atomic
+    sum_x[b] += x * w
+    sum_y[b] += y * w
+    sum_w[b] += w
 
 
 def run_gpu(density_map, points, width, height, max_iter, epsilon):
@@ -52,13 +64,12 @@ def run_gpu(density_map, points, width, height, max_iter, epsilon):
         py = np.array([p[1] for p in current], dtype=np.float32)
         px_dev = cuda.to_device(px)
         py_dev = cuda.to_device(py)
+        best_dev = cuda.to_device(np.zeros(total, dtype=np.int32))
         sum_x_dev = cuda.to_device(np.zeros(n, dtype=np.float32))
         sum_y_dev = cuda.to_device(np.zeros(n, dtype=np.float32))
         sum_w_dev = cuda.to_device(np.zeros(n, dtype=np.float32))
-        assign_kernel[blocks, threads_per_block](
-            density_dev, px_dev, py_dev, n, width, height,
-            sum_x_dev, sum_y_dev, sum_w_dev,
-        )
+        assign_kernel[blocks, threads_per_block](density_dev, px_dev, py_dev, n, width, height, best_dev)
+        update_kernel[blocks, threads_per_block](density_dev, width, height, best_dev, sum_x_dev, sum_y_dev, sum_w_dev)
         cuda.synchronize()
         sx = sum_x_dev.copy_to_host()
         sy = sum_y_dev.copy_to_host()
