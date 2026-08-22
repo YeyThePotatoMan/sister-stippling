@@ -47,14 +47,17 @@ def run_gpu(density_map, points, width, height, max_iter, epsilon, snapshots=Non
     total = width * height
     threads_per_block = 256
     blocks = (total + threads_per_block - 1) // threads_per_block
+    sum_x_dev = cuda.to_device(np.zeros(n, dtype=np.float32))
+    sum_y_dev = cuda.to_device(np.zeros(n, dtype=np.float32))
+    sum_w_dev = cuda.to_device(np.zeros(n, dtype=np.float32))
     for it in range(max_iter):
         px = np.array([p[0] for p in current], dtype=np.float32)
         py = np.array([p[1] for p in current], dtype=np.float32)
         px_dev = cuda.to_device(px)
         py_dev = cuda.to_device(py)
-        sum_x_dev = cuda.to_device(np.zeros(n, dtype=np.float32))
-        sum_y_dev = cuda.to_device(np.zeros(n, dtype=np.float32))
-        sum_w_dev = cuda.to_device(np.zeros(n, dtype=np.float32))
+        sum_x_dev.copy_to_device(np.zeros(n, dtype=np.float32))
+        sum_y_dev.copy_to_device(np.zeros(n, dtype=np.float32))
+        sum_w_dev.copy_to_device(np.zeros(n, dtype=np.float32))
         assign_kernel[blocks, threads_per_block](
             density_dev, px_dev, py_dev, n, width, height,
             sum_x_dev, sum_y_dev, sum_w_dev,
