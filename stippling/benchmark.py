@@ -8,26 +8,23 @@ import lloyd_gpu
 
 
 def run_benchmark(input_path, num_points, max_iter, epsilon, workers, max_side=150):
+    density, width, height = image_io.to_density_map(
+        image_io.resize(image_io.load_image(input_path), max_side))
+
     results = {}
 
     t0 = time.perf_counter()
-    density, width, height = image_io.to_density_map(
-        image_io.resize(image_io.load_image(input_path), max_side))
     pts = init_points.rejection_sampling(density, width, height, num_points)
     fin, _ = lloyd_sequential.run_sequential(density, pts, width, height, max_iter, epsilon)
     results["sequential"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    density, width, height = image_io.to_density_map(
-        image_io.resize(image_io.load_image(input_path), max_side))
     ptc = init_points.rejection_sampling(density, width, height, num_points)
     finc, _ = lloyd_cpu_parallel.run_cpu_parallel(density, ptc, width, height, max_iter, epsilon, workers)
     results["cpu"] = time.perf_counter() - t0
 
     if lloyd_gpu.gpu_available():
         t0 = time.perf_counter()
-        density, width, height = image_io.to_density_map(
-            image_io.resize(image_io.load_image(input_path), max_side))
         ptg = init_points.rejection_sampling(density, width, height, num_points)
         fing, _ = lloyd_gpu.run_gpu(density, ptg, width, height, max_iter, epsilon)
         results["gpu"] = time.perf_counter() - t0
