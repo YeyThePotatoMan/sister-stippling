@@ -31,21 +31,23 @@ def lloyd_iteration(density_map, points, width, height):
     return new_points
 
 
-def run_sequential(density_map, points, width, height, max_iter, epsilon):
+def run_sequential(density_map, points, width, height, max_iter, epsilon, snapshots=None):
     history = []
-    current = points
+    current = list(points)
     for it in range(max_iter):
         new_points = lloyd_iteration(density_map, current, width, height)
+        for i in range(len(current)):
+            current[i] = new_points[i]
         max_shift = 0.0
-        for i in range(len(points)):
+        for i in range(len(current)):
             dx = new_points[i][0] - current[i][0]
             dy = new_points[i][1] - current[i][1]
             shift = (dx * dx + dy * dy) ** 0.5
             if shift > max_shift:
                 max_shift = shift
         history.append(max_shift)
+        if snapshots is not None:
+            snapshots.append(current)
         if max_shift < epsilon:
-            current = new_points
             break
-        current = new_points
     return current, history
