@@ -48,11 +48,10 @@ def run_pipeline(args, mode):
     print("saved output: %s (%d points)" % (args.output, len(final_points)))
 
     if args.animate and snapshots:
-        base = os.path.splitext(args.output)[0]
-        for i, snap in enumerate(snapshots):
-            frame = image_io.render_points_to_image(snap, width, height)
-            frame.save("%s_frame_%03d.png" % (base, i))
-        print("saved %d snapshot frames" % len(snapshots))
+        frames = [image_io.render_points_to_image(s, width, height) for s in snapshots]
+        gif_path = args.gif if args.gif else (os.path.splitext(args.output)[0] + ".gif")
+        image_io.save_gif(frames, gif_path, duration=args.gif_duration)
+        print("saved animation: %s (%d frames)" % (gif_path, len(frames)))
 
 
 def build_parser():
@@ -67,6 +66,8 @@ def build_parser():
     p.add_argument("--max-side", type=int, default=150, help="resize longest side to this")
     p.add_argument("--scale", type=int, default=1, help="upscale factor for rendered dots")
     p.add_argument("--animate", action="store_true", help="save per-iteration snapshots")
+    p.add_argument("--gif", default=None, help="gif output path for animation")
+    p.add_argument("--gif-duration", type=int, default=200, dest="gif_duration", help="ms per frame")
     return p
 
 

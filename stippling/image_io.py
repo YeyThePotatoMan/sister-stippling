@@ -39,3 +39,17 @@ def render_points_to_image(points, width, height):
         if 0 <= nx < width and 0 <= ny < height:
             px[nx, ny] = (0, 0, 0)
     return img
+
+
+def save_gif(frames, path, duration=200):
+    if not frames:
+        return
+    first = frames[0]
+    first.save(
+        path,
+        save_all=True,
+        append_images=frames[1:],
+        duration=duration,
+        loop=0,
+        optimize=False,
+    )
