@@ -29,16 +29,19 @@ def run_pipeline(args, mode):
     points = init_points.rejection_sampling(density, width, height, args.points)
     snapshots = [] if args.animate else None
 
+    def progress(it, max_shift):
+        print("  iter %3d  max_shift=%.4f" % (it, max_shift), flush=True)
+
     run_t0 = time.perf_counter()
     if mode == "sequential":
         final_points, history = lloyd_sequential.run_sequential(
-            density, points, width, height, args.iters, args.epsilon, snapshots)
+            density, points, width, height, args.iters, args.epsilon, snapshots, progress if args.interactive else None)
     elif mode == "cpu":
         final_points, history = lloyd_cpu_parallel.run_cpu_parallel(
-            density, points, width, height, args.iters, args.epsilon, args.workers, snapshots)
+            density, points, width, height, args.iters, args.epsilon, args.workers, snapshots, progress if args.interactive else None)
     elif mode == "gpu":
         final_points, history = lloyd_gpu.run_gpu(
-            density, points, width, height, args.iters, args.epsilon, snapshots)
+            density, points, width, height, args.iters, args.epsilon, snapshots, progress if args.interactive else None)
     run_t1 = time.perf_counter()
     print("%s lloyd loop: %.3f s  iterations: %d  final max_shift: %.4f"
           % (mode, run_t1 - run_t0, len(history), history[-1] if history else 0.0))
