@@ -68,12 +68,18 @@ def build_parser():
     p.add_argument("--animate", action="store_true", help="save per-iteration snapshots")
     p.add_argument("--gif", default=None, help="gif output path for animation")
     p.add_argument("--gif-duration", type=int, default=200, dest="gif_duration", help="ms per frame")
+    p.add_argument("--interactive", action="store_true", help="prompt for parameters via TUI")
     return p
 
 
 def main():
     parser = build_parser()
     args = parser.parse_args()
+    if args.interactive:
+        import interactive
+        iargs = interactive.prompt()
+        run_pipeline(iargs, iargs.mode)
+        return
     if args.input is None:
         parser.error("--input is required")
     if args.mode == "benchmark":
