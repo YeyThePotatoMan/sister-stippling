@@ -1,27 +1,50 @@
 import os
 import ctypes
+import glob
+
+from types import SimpleNamespace
 
 _NATIVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "native")
 
 
-def run_simd(density_map, points, width, height, max_iter, epsilon, use_simd=True):
-    libname = "simd_kernel.so" if use_simd else "scalar_kernel.so"
+def avx2_supported():
+    try:
+        with open("/proc/cpuinfo", "r") as f:
+            for line in f:
+                if line.startswith("flags"):
+                    return "avx2" in line.split()
+    except Exception:
+        return False
+    return False
+
+
+def _load(libname):
     path = os.path.join(_NATIVE_DIR, libname)
+    if not os.path.isfile(path):
+        raise FileNotFoundError("native lib not found: %s (run native/build.sh)" % path)
     lib = ctypes.CDLL(path)
     proto = (ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int,
              ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
              ctypes.c_int,
              ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
              ctypes.POINTER(ctypes.c_double))
-    lib.lloyd_assign_simd.argtypes = proto
+    if hasattr(lib, "lloyd_assign_scalar"):
+        lib.lloyd_assign_scalar.argtypes = proto
+    if hasattr(lib, "lloyd_assign_simd"):
+        lib.lloyd_assign_simd.argtypes = proto
+    return lib
+
+
+def run_simd(density_map, points, width, height, max_iter, epsilon, use_simd=True):
+    if use_simd:
+        lib = _load("simd_kernel.so")
+        fn = lib.lloyd_assign_simd
+    else:
+        lib = _load("scalar_kernel.so")
+        fn = lib.lloyd_assign_scalar
 
     n = len(points)
     density_arr = (ctypes.c_double * len(density_map))(*density_map)
-    flat = []
-    for (x, y) in points:
-        flat.append(x)
-        flat.append(y)
-    pts_arr = (ctypes.c_double * (2 * n))(*flat)
     sum_x = (ctypes.c_double * n)()
     sum_y = (ctypes.c_double * n)()
     sum_w = (ctypes.c_double * n)()
@@ -29,7 +52,11 @@ def run_simd(density_map, points, width, height, max_iter, epsilon, use_simd=Tru
     current = points
     history = []
     for it in range(max_iter):
-        lib.lloyd_assign_simd(density_arr, width, height, pts_arr, pts_arr, n, sum_x, sum_y, sum_w)
+        px = [p[0] for p in current]
+        py = [p[1] for p in current]
+        px_arr = (ctypes.c_double * n)(*px)
+        py_arr = (ctypes.c_double * n)(*py)
+        fn(density_arr, width, height, px_arr, py_arr, n, sum_x, sum_y, sum_w)
         new_points = []
         max_shift = 0.0
         for i in range(n):
