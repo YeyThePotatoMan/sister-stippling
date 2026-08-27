@@ -36,7 +36,7 @@ def _load(libname):
 
 
 def run_simd(density_map, points, width, height, max_iter, epsilon, use_simd=True):
-    if use_simd:
+    if use_simd and avx2_supported():
         lib = _load("simd_kernel.so")
         fn = lib.lloyd_assign_simd
     else:
